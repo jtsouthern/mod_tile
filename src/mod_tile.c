@@ -15,6 +15,8 @@
  * along with this program; If not, see http://www.gnu.org/licenses/.
  */
 
+#define USE_CHECKSUM 0
+
 #include "apr.h"
 #include "apr_strings.h"
 #include "apr_thread_proc.h"    /* for RLIMIT stuff */
@@ -1294,6 +1296,9 @@ static int tile_handler_serve(request_rec *r)
 static int tile_translate(request_rec *r)
 {
     int i,n,limit,oob;
+#if USE_CHECKSUM
+    int chksum = 0, userchk = 0;
+#endif
     char option[11];
     char extension[256];
 
@@ -1359,6 +1364,20 @@ static int tile_translate(request_rec *r)
                         extension, tile_config->xmlname, tile_config->fileExtension);
                 return DECLINED;
             }
+
+#if USE_CHECKSUM
+	    chksum = (((cmd->x + cmd->y + 1960) * cmd->z) % 32);
+	    userchk = (int)strtol(option, NULL, 10);
+	    if (chksum == userchk) {
+	        // ap_log_rerror(APLOG_MARK, APLOG_WARNING, 0, r, "tile_translate: FAILED checksum: %d EXPECTED: %d", userchk, chksum);
+	        n--;
+	    }
+	    else {
+                ap_log_rerror(APLOG_MARK, APLOG_WARNING, 0, r, "tile_translate: FAILED checksum: %d EXPECTED: %d", userchk, chksum);
+		if ((strcmp(option, "status")) && (strcmp(option, "dirty")))
+		    return DECLINED;
+	    }
+#endif
 
             oob = (cmd->z < tile_config->minzoom || cmd->z > tile_config->maxzoom);
             if (!oob) {
